@@ -1,6 +1,7 @@
-import "dotenv/config";
+import env from 'env-var';
 
-export const ENV = {
-  PORT: process.env.PORT || 4000,
-  MONGODB_URI: process.env.MONGODB_URI || "mongodb://localhost:27017/myapp",
+export const envConfig = {
+  PORT: env.get('PORT').default('4000').asPortNumber(),
+  MONGODB_URI: env.get('MONGODB_URI').required().asString(),
+  JWT_SECRET: env.get('JWT_SECRET').required().asString(),
 };
