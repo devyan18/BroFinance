@@ -1,8 +1,8 @@
-import { envConfig } from '../../settings/environments.ts';
-import jwt from 'jsonwebtoken';
-import { UsuarioModel } from '../usuarios/usuario.model.ts';
 import { BlacklistModel } from './blacklistToken.model.ts';
+import { UsuarioModel } from '../usuarios/usuario.model.ts';
+import { envConfig } from '../../settings/environments.ts';
 import { compare } from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 const timesOfExpiration = {
   accessToken: 60 * 15, // 15 minutes
@@ -97,3 +97,4 @@ export const createAccessTokenService = async (refreshToken: string) => {
   const { userId } = await verifyToken(refreshToken);
   return await createToken({ userId }, timesOfExpiration.accessToken);
 };
+

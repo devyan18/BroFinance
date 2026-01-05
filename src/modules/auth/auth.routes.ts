@@ -9,7 +9,7 @@ import {
   createAccessTokenService,
 } from './auth.services.ts';
 import { validateData } from '../middlewares/validateRoute.ts';
-import { signInSchema, signUpSchema } from './auth.route.validations.ts';
+import { signInLocalSchema, signUpLocalSchema } from './auth.route.validations.ts';
 
 const validateRequest = async (req: Request, res: Response, next: NextFunction) => {
   let accessToken = req.headers['authorization']
@@ -46,7 +46,7 @@ const validateRequest = async (req: Request, res: Response, next: NextFunction) 
 
 const authRouter = Router();
 
-authRouter.post('/auth/local/sign-in', validateData(signInSchema), async (req, res) => {
+authRouter.post('/auth/local/sign-in', validateData(signInLocalSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await signInService(email, password);
@@ -57,15 +57,18 @@ authRouter.post('/auth/local/sign-in', validateData(signInSchema), async (req, r
   }
 });
 
-authRouter.post('/auth/local/sign-up', validateData(signUpSchema), async (req, res) => {
+authRouter.post('/auth/local/sign-up', validateData(signUpLocalSchema), async (req, res) => {
   try {
     const { username, email, password } = req.body;
     const result = await signUpService(username, email, password);
     res.status(StatusCodes.OK).json(result);
   } catch (error) {
+    console.log(error);
     res.status(StatusCodes.BAD_REQUEST).json({ error: ReasonPhrases.BAD_REQUEST });
   }
 });
+
+authRouter.patch('/auth/sign-in', async (req, res) => {});
 
 authRouter.post('/auth/sign-out', async (_req, res) => {
   try {
@@ -91,3 +94,4 @@ authRouter.get('/auth/me', validateRequest, async (_req, res) => {
 });
 
 export { authRouter, validateRequest };
+

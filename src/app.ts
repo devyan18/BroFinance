@@ -23,7 +23,7 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   }),
@@ -37,3 +37,4 @@ app.listen(envConfig.PORT, async () => {
   console.log(`Server on port ${envConfig.PORT}`);
   connectDb(envConfig.MONGODB_URI).catch(_error => process.exit(1));
 });
+

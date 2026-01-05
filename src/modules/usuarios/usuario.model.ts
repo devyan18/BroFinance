@@ -1,12 +1,13 @@
 import { Schema, model, Document } from 'mongoose';
 import { hash, genSalt } from 'bcrypt';
 
+type Provider = 'local' | 'google' | 'github';
 type Usuario = Document & {
   username: string;
   avatarUrl?: string;
   email: string;
   password: string;
-  provider: 'local' | 'google';
+  provider: Provider[];
   balance: number;
 };
 
@@ -16,7 +17,7 @@ const UsuarioSchema = new Schema<Usuario>(
     avatarUrl: { type: String, required: false },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: false, select: false },
-    provider: { type: String, required: true, enum: ['local', 'google'] },
+    provider: { type: [String], enum: ['local', 'google', 'github'], default: ['local'] },
     balance: { type: Number, default: 0 },
   },
   {
@@ -33,3 +34,4 @@ UsuarioSchema.pre<Usuario>('save', async function (_next) {
 });
 
 export const UsuarioModel = model<Usuario>('Usuario', UsuarioSchema);
+
