@@ -79,8 +79,8 @@ const UsuarioSchema = new Schema<IUsuario>(
  * Pre-save hook to hash password before saving
  */
 UsuarioSchema.pre<IUsuario>('save', async function () {
-  // Only hash password if it has been modified
-  if (!this.isModified('password')) return;
+  // Only hash password if it has been modified and actually exists
+  if (!this.isModified('password') || !this.password) return;
 
   const salt = await genSalt(10);
   this.password = await hash(this.password, salt);
@@ -90,4 +90,3 @@ UsuarioSchema.pre<IUsuario>('save', async function () {
  * Usuario model
  */
 export const UsuarioModel = model<IUsuario>('Usuario', UsuarioSchema);
-
