@@ -1,24 +1,73 @@
+/**
+ * Usuario (User) Model
+ * Defines the schema and model for user authentication and profile
+ */
+
 import { Schema, model, Document } from 'mongoose';
 import { hash, genSalt } from 'bcrypt';
 
+/**
+ * Supported authentication providers
+ */
 type Provider = 'local' | 'google' | 'github';
-type Usuario = Document & {
+
+/**
+ * Usuario document interface
+ */
+export interface IUsuario extends Document {
   username: string;
   avatarUrl?: string;
   email: string;
   password: string;
   provider: Provider[];
   balance: number;
-};
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-const UsuarioSchema = new Schema<Usuario>(
+/**
+ * Usuario schema definition
+ */
+const UsuarioSchema = new Schema<IUsuario>(
   {
-    username: { type: String, required: true },
-    avatarUrl: { type: String, required: false },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: false, select: false },
-    provider: { type: [String], enum: ['local', 'google', 'github'], default: ['local'] },
-    balance: { type: Number, default: 0 },
+    username: {
+      type: String,
+      required: [true, 'Username is required'],
+      trim: true,
+      minlength: [3, 'Username must be at least 3 characters'],
+    },
+    avatarUrl: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address'],
+    },
+    password: {
+      type: String,
+      required: false,
+      select: false,
+      minlength: [5, 'Password must be at least 5 characters'],
+    },
+    provider: {
+      type: [String],
+      enum: {
+        values: ['local', 'google', 'github'],
+        message: '{VALUE} is not a supported provider',
+      },
+      default: ['local'],
+    },
+    balance: {
+      type: Number,
+      default: 0,
+      min: [0, 'Balance cannot be negative'],
+    },
   },
   {
     timestamps: true,
@@ -26,12 +75,19 @@ const UsuarioSchema = new Schema<Usuario>(
   },
 );
 
-UsuarioSchema.pre<Usuario>('save', async function (_next) {
+/**
+ * Pre-save hook to hash password before saving
+ */
+UsuarioSchema.pre<IUsuario>('save', async function () {
+  // Only hash password if it has been modified
   if (!this.isModified('password')) return;
 
   const salt = await genSalt(10);
   this.password = await hash(this.password, salt);
 });
 
-export const UsuarioModel = model<Usuario>('Usuario', UsuarioSchema);
+/**
+ * Usuario model
+ */
+export const UsuarioModel = model<IUsuario>('Usuario', UsuarioSchema);
 

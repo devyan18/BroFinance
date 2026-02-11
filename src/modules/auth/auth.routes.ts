@@ -1,97 +1,81 @@
-import { ReasonPhrases, StatusCodes } from 'http-status-codes';
-import { Router, type Response, type Request, type NextFunction } from 'express';
-import { UsuarioModel } from '../usuarios/usuario.model.ts';
+/**
+ * Authentication routes
+ * Defines API endpoints for authentication
+ */
+
+import { Router } from 'express';
 import {
-  signInService,
-  signOutService,
-  signUpService,
-  verifyToken,
-  createAccessTokenService,
-} from './auth.services.ts';
+  signInController,
+  signUpController,
+  signOutController,
+  getMeController,
+  refreshTokenController,
+  googleAuthController,
+} from './auth.controllers.ts';
 import { validateData } from '../middlewares/validateRoute.ts';
-import { signInLocalSchema, signUpLocalSchema } from './auth.route.validations.ts';
-
-const validateRequest = async (req: Request, res: Response, next: NextFunction) => {
-  let accessToken = req.headers['authorization']
-    ? String(req.headers['authorization']).split(' ')[1]
-    : null;
-  const refreshToken = req.headers['x-refresh-token']
-    ? String(req.headers['x-refresh-token']).split(' ')[1]
-    : null;
-
-  if (!accessToken || !refreshToken)
-    return res.status(StatusCodes.UNAUTHORIZED).json({ error: ReasonPhrases.UNAUTHORIZED });
-
-  try {
-    const { userId } = await verifyToken(accessToken).catch(() => {
-      return { userId: null };
-    });
-
-    if (!userId) {
-      accessToken = await createAccessTokenService(refreshToken);
-    }
-
-    if (!userId || !accessToken) {
-      return res.status(StatusCodes.UNAUTHORIZED).json({ error: ReasonPhrases.UNAUTHORIZED });
-    }
-
-    res.locals.accessToken = accessToken;
-    res.locals.userId = userId;
-
-    return next();
-  } catch (error) {
-    return res.status(StatusCodes.UNAUTHORIZED).json({ error: ReasonPhrases.UNAUTHORIZED });
-  }
-};
+import {
+  signInLocalSchema,
+  signUpLocalSchema,
+  googleAuthSchema,
+} from './auth.route.validations.ts';
+import { asyncHandler } from '../../middlewares/errorHandler.ts';
+import { authenticate } from '../../middlewares/authenticate.ts';
 
 const authRouter = Router();
 
-authRouter.post('/auth/local/sign-in', validateData(signInLocalSchema), async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const result = await signInService(email, password);
-    res.status(StatusCodes.OK).json(result);
-  } catch (error) {
-    console.log(error);
-    res.status(StatusCodes.UNAUTHORIZED).json({ error: ReasonPhrases.UNAUTHORIZED });
-  }
-});
+/**
+ * @route   POST /api/v1/auth/google/callback
+ * @desc    Sign in or sign up with Google
+ * @access  Public
+ */
+authRouter.post(
+  '/auth/google/callback',
+  validateData(googleAuthSchema),
+  asyncHandler(googleAuthController),
+);
 
-authRouter.post('/auth/local/sign-up', validateData(signUpLocalSchema), async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-    const result = await signUpService(username, email, password);
-    res.status(StatusCodes.OK).json(result);
-  } catch (error) {
-    console.log(error);
-    res.status(StatusCodes.BAD_REQUEST).json({ error: ReasonPhrases.BAD_REQUEST });
-  }
-});
+/**
+ * @route   POST /api/v1/auth/local/sign-up
+ * @desc    Register a new user with local authentication
+ * @access  Public
+ */
+authRouter.post(
+  '/auth/local/sign-up',
+  validateData(signUpLocalSchema),
+  asyncHandler(signUpController),
+);
 
-authRouter.patch('/auth/sign-in', async (req, res) => {});
+/**
+ * @route   POST /api/v1/auth/local/sign-in
+ * @desc    Sign in with email and password
+ * @access  Public
+ */
+authRouter.post(
+  '/auth/local/sign-in',
+  validateData(signInLocalSchema),
+  asyncHandler(signInController),
+);
 
-authRouter.post('/auth/sign-out', async (_req, res) => {
-  try {
-    const refreshToken = res.locals.refreshToken;
-    await signOutService(refreshToken);
-    res.status(StatusCodes.OK).json({ message: 'Successfully signed out' });
-  } catch (error) {
-    res.status(StatusCodes.BAD_REQUEST).json({ error: ReasonPhrases.BAD_REQUEST });
-  }
-});
+/**
+ * @route   POST /api/v1/auth/refresh
+ * @desc    Refresh access token using refresh token
+ * @access  Public
+ */
+authRouter.post('/auth/refresh', asyncHandler(refreshTokenController));
 
-authRouter.get('/auth/me', validateRequest, async (_req, res) => {
-  try {
-    const userId = res.locals.userId;
-    const user = await UsuarioModel.findById(userId);
-    if (!user) {
-      return res.status(StatusCodes.NOT_FOUND).json({ error: ReasonPhrases.NOT_FOUND });
-    }
-    res.status(StatusCodes.OK).json({ user });
-  } catch (error) {
-    res.status(StatusCodes.BAD_REQUEST).json({ error: ReasonPhrases.BAD_REQUEST });
-  }
-});
+/**
+ * @route   POST /api/v1/auth/sign-out
+ * @desc    Sign out and blacklist refresh token
+ * @access  Private
+ */
+authRouter.post('/auth/sign-out', authenticate, asyncHandler(signOutController));
 
-export { authRouter, validateRequest };
+/**
+ * @route   GET /api/v1/auth/me
+ * @desc    Get current authenticated user
+ * @access  Private
+ */
+authRouter.get('/auth/me', authenticate, asyncHandler(getMeController));
+
+export { authRouter };
 

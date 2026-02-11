@@ -15,3 +15,17 @@ export const signUpLocalSchema = {
   }),
 };
 
+export const googleAuthSchema = {
+  body: z
+    .object({
+      token: z.string().optional(),
+      credential: z.string().optional(), // Common in Google Identity Services
+      idToken: z.string().optional(), // Common in other libraries
+      code: z.string().optional(), // Authorization Code Flow
+    })
+    .refine(data => data.token || data.credential || data.idToken || data.code, {
+      message: 'Google auth requires token, credential, idToken, or code',
+      path: ['code'],
+    }),
+};
+
