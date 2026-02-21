@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: bro-finances-api
+    runtime: docker
+    # Render will auto-detect the Dockerfile in the repo root
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Required — your MongoDB Atlas connection string
+      # Format: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>
+      - key: MONGODB_URI
+        sync: false
+
+      # Required — long random string used to sign JWT tokens
+      # Render can generate one for you: click "Generate" in the dashboard
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Required — public URL of your frontend on Render
+      # Example: https://bro-finances-app.onrender.com
+      - key: CORS_ORIGIN
+        sync: false
+
+      # Optional — Google OAuth credentials
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+    # Persistent disk for uploaded avatars.
+    # ⚠️  Requires a paid Render plan. Remove this block if you're on the free tier
+    # (uploads will be lost on each deploy; migrate to S3/Cloudinary for production).
+    disk:
+      name: uploads
+      mountPath: /app/uploads
+      sizeGB: 1
