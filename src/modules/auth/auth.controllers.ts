@@ -11,6 +11,7 @@ import { googleAuthService } from './auth.google.service.ts';
 import { sendSuccess, sendError } from '../../utils/response.ts';
 import { AuthenticatedRequest } from '../../types/index.ts';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '../../utils/errors.ts';
+import { uploadAvatarToCloudinary } from '../../utils/cloudinary.ts';
 
 /**
  * Sign in or sign up with Google
@@ -134,18 +135,14 @@ export const updateProfileController = async (req: AuthenticatedRequest, res: Re
  */
 export const uploadAvatarController = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId) {
-    throw new UnauthorizedError('User not authenticated');
-  }
+  if (!userId) throw new UnauthorizedError('User not authenticated');
 
   const file = req.file;
-  if (!file) {
-    throw new BadRequestError('No se envió ninguna imagen');
-  }
+  if (!file) throw new BadRequestError('No se envió ninguna imagen');
 
-  const relativePath = `avatars/${file.filename}`;
-  const user = await updateProfileService(userId, { avatarUrl: relativePath });
-  sendSuccess(res, { user, avatarUrl: relativePath }, 'Avatar actualizado');
+  const avatarUrl = await uploadAvatarToCloudinary(file.buffer, userId);
+  const user = await updateProfileService(userId, { avatarUrl });
+  sendSuccess(res, { user, avatarUrl }, 'Avatar actualizado');
 };
 
 /**

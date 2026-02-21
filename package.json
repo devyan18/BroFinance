@@ -17,10 +17,14 @@
   "author": "",
   "license": "ISC",
   "pnpm": {
-    "onlyBuiltDependencies": ["mongodb-memory-server", "bcrypt"]
+    "onlyBuiltDependencies": [
+      "mongodb-memory-server",
+      "bcrypt"
+    ]
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "env-var": "^7.5.0",
@@ -37,7 +41,6 @@
     "zod": "^4.3.4"
   },
   "devDependencies": {
-    "esbuild": "^0.25.12",
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
@@ -48,6 +51,7 @@
     "@types/node": "^25.2.3",
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-v8": "^4.0.18",
+    "esbuild": "^0.25.12",
     "mongodb-memory-server": "^11.0.1",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",

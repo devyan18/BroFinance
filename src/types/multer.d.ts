@@ -7,10 +7,12 @@ declare global {
         encoding: string;
         mimetype: string;
         size: number;
-        destination: string;
-        filename: string;
-        path: string;
+        // Memory storage: buffer is populated, disk fields are absent
         buffer: Buffer;
+        // Disk storage only
+        destination?: string;
+        filename?: string;
+        path?: string;
       }
     }
     interface Request {

@@ -29,10 +29,11 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
 
-    # Persistent disk for uploaded avatars.
-    # ⚠️  Requires a paid Render plan. Remove this block if you're on the free tier
-    # (uploads will be lost on each deploy; migrate to S3/Cloudinary for production).
-    disk:
-      name: uploads
-      mountPath: /app/uploads
-      sizeGB: 1
+      # Required for avatar uploads — get from https://console.cloudinary.com
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+

@@ -13,5 +13,8 @@ export const envConfig = {
   CORS_ORIGIN: env.get('CORS_ORIGIN').default('http://localhost:5173').asString(),
   GOOGLE_CLIENT_ID: env.get('GOOGLE_CLIENT_ID').asString(),
   GOOGLE_CLIENT_SECRET: env.get('GOOGLE_CLIENT_SECRET').asString(),
+  CLOUDINARY_CLOUD_NAME: env.get('CLOUDINARY_CLOUD_NAME').asString(),
+  CLOUDINARY_API_KEY: env.get('CLOUDINARY_API_KEY').asString(),
+  CLOUDINARY_API_SECRET: env.get('CLOUDINARY_API_SECRET').asString(),
 };
 

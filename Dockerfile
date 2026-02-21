@@ -38,9 +38,6 @@ COPY package.json ./
 # Copy JS bundle
 COPY --from=builder /app/dist ./dist
 
-# Directory for uploaded avatars
-RUN mkdir -p uploads
-
 EXPOSE 4000
 
 CMD ["node", "dist/app.js"]
