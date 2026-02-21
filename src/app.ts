@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import path from 'path';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -11,13 +12,23 @@ import expressRateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import { envConfig } from './settings/environments.ts';
 import { authRouter } from './modules/auth/auth.routes.ts';
+import { comprasRouter } from './modules/compras/compras.routes.ts';
+import { paymentsRouter } from './modules/payments/payments.routes.ts';
+import { friendsRouter } from './modules/friends/friends.routes.ts';
 import { connectDb } from './settings/connectDb.ts';
-import { errorHandler, notFoundHandler } from './middlewares/errorHandler.ts';
+import { asyncHandler, errorHandler, notFoundHandler } from './middlewares/errorHandler.ts';
+import { authenticate } from './middlewares/authenticate.ts';
+import { getUserPublicController } from './modules/auth/auth.controllers.ts';
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware (allow cross-origin images for avatars)
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 
 // Rate limiting - 500 requests per 15 minutes per IP
 app.use(
@@ -61,8 +72,17 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// Get public user profile (Express 5 router param matching workaround)
+app.get('/api/v1/auth/profile/:id', authenticate, asyncHandler(getUserPublicController));
+
+// Serve uploaded avatars
+app.use('/api/v1/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 // API v1 routes
 app.use('/api/v1', authRouter);
+app.use('/api/v1', comprasRouter);
+app.use('/api/v1', paymentsRouter);
+app.use('/api/v1', friendsRouter);
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);
@@ -78,6 +98,10 @@ app.listen(envConfig.PORT, async () => {
 
   try {
     await connectDb(envConfig.MONGODB_URI);
+    const { seedTiposCompra, migrateComprasEstado } = await import('./modules/compras/compras.seed.ts');
+    await seedTiposCompra();
+    await migrateComprasEstado();
+    console.log('📦 Tipos de compra inicializados');
   } catch (error) {
     console.error('❌ Failed to connect to database');
     process.exit(1);

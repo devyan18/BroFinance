@@ -9,17 +9,23 @@ import {
   signUpController,
   signOutController,
   getMeController,
+  updateProfileController,
+  uploadAvatarController,
   refreshTokenController,
   googleAuthController,
+  setPasswordController,
 } from './auth.controllers.ts';
 import { validateData } from '../middlewares/validateRoute.ts';
 import {
   signInLocalSchema,
   signUpLocalSchema,
   googleAuthSchema,
+  updateProfileSchema,
+  setPasswordSchema,
 } from './auth.route.validations.ts';
 import { asyncHandler } from '../../middlewares/errorHandler.ts';
 import { authenticate } from '../../middlewares/authenticate.ts';
+import { uploadAvatar } from '../../middlewares/uploadAvatar.ts';
 
 const authRouter = Router();
 
@@ -76,6 +82,44 @@ authRouter.post('/auth/sign-out', authenticate, asyncHandler(signOutController))
  * @access  Private
  */
 authRouter.get('/auth/me', authenticate, asyncHandler(getMeController));
+
+/**
+ * @route   PATCH /api/v1/auth/profile
+ * @desc    Update profile (username, cbu)
+ * @access  Private
+ */
+authRouter.patch(
+  '/auth/profile',
+  authenticate,
+  validateData(updateProfileSchema),
+  asyncHandler(updateProfileController),
+);
+
+/**
+ * @route   PATCH /api/v1/auth/set-password
+ * @desc    Set username + password for Google-registered users
+ * @access  Private
+ */
+authRouter.patch(
+  '/auth/set-password',
+  authenticate,
+  validateData(setPasswordSchema),
+  asyncHandler(setPasswordController),
+);
+
+/**
+ * @route   POST /api/v1/auth/avatar
+ * @desc    Upload avatar image
+ * @access  Private
+ */
+authRouter.post(
+  '/auth/avatar',
+  authenticate,
+  (req, res, next) => {
+    uploadAvatar(req, res, (err: unknown) => (err ? next(err) : next()));
+  },
+  asyncHandler(uploadAvatarController),
+);
 
 export { authRouter };
 

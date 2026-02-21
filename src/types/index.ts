@@ -55,7 +55,7 @@ export interface JwtPayload {
 }
 
 /**
- * Extended Express Request with user info
+ * Request after authenticate middleware (req.user has userId from JWT)
  */
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -79,6 +79,7 @@ export interface UserResponse {
   avatarUrl?: string;
   provider: Provider[];
   balance: number;
+  cbu?: string;
   createdAt: Date;
   updatedAt: Date;
 }

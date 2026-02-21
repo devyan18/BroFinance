@@ -29,22 +29,22 @@ export const validateData =
         req.params = result.data as any;
       }
 
-      // Validate query
+      // Validate query (req.query is read-only in Express, store in validatedQuery)
       if (schemas.query) {
         const result = schemas.query.safeParse(req.query);
         if (!result.success) throw result.error;
-        req.query = result.data as any;
+        (req as Request & { validatedQuery?: unknown }).validatedQuery = result.data;
       }
 
       next();
     } catch (error) {
       if (error instanceof ZodError) {
         const formatted = error.issues.map(issue => ({
-          path: issue.path.join('.') || '(root)',
-          message: issue.message,
+          path: (issue.path || []).join('.') || '(root)',
+          message: typeof issue.message === 'string' ? issue.message : String(issue.message),
         }));
-
-        sendError(res, 'Validation failed', 400, formatted);
+        const firstMsg = formatted[0]?.message || 'Validation failed';
+        sendError(res, firstMsg, 400, formatted);
         return;
       }
 

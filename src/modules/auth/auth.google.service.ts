@@ -114,13 +114,13 @@ export const googleAuthService = async (
       await user.save();
     }
   } else {
-    // Create new user
+    // Create new user — must set a password before using local sign-in
     user = new UsuarioModel({
       username: payload.name || payload.email.split('@')[0],
       email: payload.email,
       avatarUrl: payload.picture,
       provider: ['google'],
-      // No password for Google users
+      needsPasswordSetup: true,
     });
 
     await user.save();

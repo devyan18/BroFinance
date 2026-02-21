@@ -8,7 +8,7 @@ import { UsuarioModel } from '../usuarios/usuario.model.ts';
 import { envConfig } from '../../settings/environments.ts';
 import { compare } from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { UnauthorizedError, ConflictError, InternalServerError } from '../../utils/errors.ts';
+import { UnauthorizedError, ConflictError, InternalServerError, NotFoundError, BadRequestError } from '../../utils/errors.ts';
 import { JwtPayload, AuthTokens, AuthResponse, UserResponse } from '../../types/index.ts';
 
 const timesOfExpiration = {
@@ -57,13 +57,21 @@ export const generateAuthTokens = async (userId: string): Promise<AuthTokens> =>
 };
 
 /**
- * Sign in a user with email and password
+ * Sign in a user with email OR username and password
  */
-export const signInService = async (email: string, password: string): Promise<AuthResponse> => {
-  const user = await UsuarioModel.findOne({ email }, '+password');
+export const signInService = async (identifier: string, password: string): Promise<AuthResponse> => {
+  // Find by email or username
+  const user = await UsuarioModel.findOne(
+    { $or: [{ email: identifier.toLowerCase() }, { username: identifier }] },
+    '+password',
+  );
 
   if (!user) {
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError('Invalid email/username or password');
+  }
+
+  if (!user.password) {
+    throw new UnauthorizedError('Esta cuenta usa Google. Completa el registro con una contraseña para poder iniciar sesión aquí.');
   }
 
   const { password: userPassword, ...userWithoutPassword } = user.toJSON();
@@ -71,7 +79,7 @@ export const signInService = async (email: string, password: string): Promise<Au
   const isPasswordValid = await compare(password, userPassword || '');
 
   if (!isPasswordValid) {
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError('Invalid email/username or password');
   }
 
   const tokens = await generateAuthTokens(user._id.toString());
@@ -80,6 +88,40 @@ export const signInService = async (email: string, password: string): Promise<Au
     user: userWithoutPassword as any as UserResponse,
     tokens,
   };
+};
+
+/**
+ * Set password for a Google user completing their local auth setup
+ */
+export const setPasswordService = async (
+  userId: string,
+  username: string,
+  password: string,
+): Promise<UserResponse> => {
+  const user = await UsuarioModel.findById(userId, '+password');
+  if (!user) throw new NotFoundError('User not found');
+
+  if (!user.needsPasswordSetup) {
+    throw new BadRequestError('La contraseña ya fue configurada');
+  }
+
+  // Check username availability (excluding current user)
+  const existingUsername = await UsuarioModel.findOne({ username, _id: { $ne: userId } });
+  if (existingUsername) {
+    throw new ConflictError('El nombre de usuario ya está en uso');
+  }
+
+  user.username = username;
+  user.password = password;
+  user.needsPasswordSetup = false;
+  if (!user.provider.includes('local')) {
+    user.provider.push('local');
+  }
+
+  await user.save();
+
+  const { password: _, ...userWithoutPassword } = user.toJSON();
+  return userWithoutPassword as any as UserResponse;
 };
 
 /**
@@ -146,5 +188,26 @@ export const refreshTokenService = async (refreshToken: string): Promise<string>
 export const createAccessTokenService = async (refreshToken: string): Promise<string> => {
   const { userId } = await verifyToken(refreshToken);
   return await createToken({ userId }, timesOfExpiration.accessToken);
+};
+
+/**
+ * Update user profile (username, cbu, avatarUrl, visibility)
+ */
+export const updateProfileService = async (
+  userId: string,
+  updates: { username?: string; cbu?: string; avatarUrl?: string; showCbu?: boolean; showEmail?: boolean },
+): Promise<UserResponse> => {
+  const user = await UsuarioModel.findById(userId);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+  if (updates.username !== undefined) user.username = updates.username;
+  if (updates.cbu !== undefined) user.cbu = updates.cbu === '' ? undefined : updates.cbu;
+  if (updates.avatarUrl !== undefined) user.avatarUrl = updates.avatarUrl === '' ? undefined : updates.avatarUrl;
+  if (updates.showCbu !== undefined) user.showCbu = updates.showCbu;
+  if (updates.showEmail !== undefined) user.showEmail = updates.showEmail;
+  await user.save();
+  const { password: _, ...userWithoutPassword } = user.toJSON();
+  return userWithoutPassword as any as UserResponse;
 };
 

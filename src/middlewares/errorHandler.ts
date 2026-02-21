@@ -59,6 +59,18 @@ export const errorHandler = (err: Error, req: Request, res: Response, next: Next
     return;
   }
 
+  // Handle Multer errors (file upload)
+  if (err.name === 'MulterError') {
+    const msg =
+      (err as any).code === 'LIMIT_FILE_SIZE'
+        ? 'La imagen no puede superar 2MB'
+        : (err as any).code === 'LIMIT_UNEXPECTED_FILE'
+          ? 'Campo de archivo no válido (use "avatar")'
+          : 'Error al subir la imagen';
+    sendError(res, msg, 400);
+    return;
+  }
+
   // Handle JWT errors
   if (err.name === 'JsonWebTokenError') {
     sendError(res, 'Invalid token', 401);

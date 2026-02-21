@@ -21,6 +21,10 @@ export interface IUsuario extends Document {
   password: string;
   provider: Provider[];
   balance: number;
+  cbu?: string;
+  showCbu?: boolean;
+  showEmail?: boolean;
+  needsPasswordSetup?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,8 +70,23 @@ const UsuarioSchema = new Schema<IUsuario>(
     balance: {
       type: Number,
       default: 0,
-      min: [0, 'Balance cannot be negative'],
+      // Positivo = te deben, negativo = debes (según compras)
     },
+    cbu: {
+      type: String,
+      required: false,
+      trim: true,
+      // CBU/CVU para recibir transferencias
+      validate: {
+        validator: (v: string) => !v || /^\d{18,26}$/.test(v),
+        message: 'CBU/CVU debe tener entre 18 y 26 dígitos',
+      },
+    },
+    // Visibilidad para otros usuarios
+    showCbu: { type: Boolean, default: true },
+    showEmail: { type: Boolean, default: false },
+    // Usuarios nuevos creados via Google deben crear contraseña antes de poder usar el login local
+    needsPasswordSetup: { type: Boolean, default: false },
   },
   {
     timestamps: true,
