@@ -25,6 +25,7 @@ export interface IUsuario extends Document {
   showCbu?: boolean;
   showEmail?: boolean;
   needsPasswordSetup?: boolean;
+  pushToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -87,6 +88,8 @@ const UsuarioSchema = new Schema<IUsuario>(
     showEmail: { type: Boolean, default: false },
     // Usuarios nuevos creados via Google deben crear contraseña antes de poder usar el login local
     needsPasswordSetup: { type: Boolean, default: false },
+    // Expo push token para notificaciones móviles
+    pushToken: { type: String, required: false, trim: true },
   },
   {
     timestamps: true,

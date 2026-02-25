@@ -5,6 +5,7 @@ import { ComprasModel, TipoCompraModel } from '../modules/compras/compras.model'
 import { UsuarioModel } from '../modules/usuarios/usuario.model';
 import { getFriendIds, areFriends } from '../modules/friends/friends.services.ts';
 import { Types } from 'mongoose';
+import { sendPushNotification } from '../utils/notifications.service.ts';
 
 /**
  * Controlador para operaciones de gastos entre roomies.
@@ -116,6 +117,19 @@ export class ComprasController {
       });
 
       await compra.save();
+
+      // Notificar al deudor si es un gasto compartido
+      if (!isSolo) {
+        const deudorDoc = await UsuarioModel.findById(deudorId);
+        if (deudorDoc?.pushToken) {
+          const montoFormatted = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(montoDeudor);
+          await sendPushNotification([deudorDoc.pushToken], {
+            title: `${acreedor.username} te cobró`,
+            body: `${descripcion} — ${montoFormatted}`,
+            data: { type: 'new_charge', compraId: String(compra._id) },
+          });
+        }
+      }
 
       res.status(201).json({
         success: true,
@@ -589,7 +603,9 @@ export class ComprasController {
         return;
       }
 
-      // Solo el acreedor puede editar (quien cobra) y solo si está pendiente
+      const compraDoc = compra as { estado?: string };
+
+      // Solo el acreedor puede editar
       if (compra.acreedorId.toString() !== req.user.userId) {
         res.status(403).json({
           success: false,
@@ -598,16 +614,19 @@ export class ComprasController {
         });
         return;
       }
-      if ((compra as { estado?: string }).estado !== 'pendiente') {
+      // No se puede editar una compra ya pagada o con pago en espera
+      if (compraDoc.estado === 'pagado' || compraDoc.estado === 'pago_pendiente') {
         res.status(400).json({
           success: false,
-          error: 'No se puede editar una compra ya aceptada o rechazada',
-          code: 'COMPRA_NOT_PENDING',
+          error: 'No se puede editar una compra con pago en curso o ya pagada',
+          code: 'COMPRA_NOT_EDITABLE',
         });
         return;
       }
 
+      const wasAceptado = compraDoc.estado === 'aceptado';
       const oldMonto = compra.montoDeudor;
+
       if (descripcion !== undefined) compra.descripcion = descripcion;
       if (montoTotal !== undefined) compra.montoTotal = montoTotal;
       if (montoDeudor !== undefined) {
@@ -626,8 +645,19 @@ export class ComprasController {
 
       const newMonto = compra.montoDeudor;
 
-      // Revertir balance anterior y aplicar nuevo si cambió el monto
-      if (oldMonto !== newMonto) {
+      // Si estaba aceptado: revertir balance y volver a pendiente para re-aceptación
+      if (wasAceptado) {
+        const deudor = await UsuarioModel.findById(compra.deudorId);
+        const acreedor = await UsuarioModel.findById(compra.acreedorId);
+        if (deudor && acreedor) {
+          deudor.balance += oldMonto;
+          acreedor.balance -= oldMonto;
+          await deudor.save();
+          await acreedor.save();
+        }
+        compraDoc.estado = 'pendiente';
+      } else if (compraDoc.estado === 'pendiente' && oldMonto !== newMonto) {
+        // Si ya era pendiente y cambió el monto, ajustar balance si aplica
         const deudor = await UsuarioModel.findById(compra.deudorId);
         const acreedor = await UsuarioModel.findById(compra.acreedorId);
         if (deudor && acreedor) {
@@ -775,6 +805,17 @@ export class ComprasController {
       compraDoc.estado = 'aceptado';
       await compra.save();
 
+      // Notificar al acreedor
+      const acreedorDoc = await UsuarioModel.findById(compra.acreedorId);
+      const deudorForNotif = await UsuarioModel.findById(compra.deudorId);
+      if (acreedorDoc?.pushToken && deudorForNotif) {
+        await sendPushNotification([acreedorDoc.pushToken], {
+          title: `${deudorForNotif.username} aceptó tu cobro`,
+          body: compra.descripcion,
+          data: { type: 'charge_accepted', compraId: id },
+        });
+      }
+
       const updated = await ComprasModel.findById(id)
         .populate('acreedorId', 'username avatarUrl')
         .populate('deudorId', 'username avatarUrl')
@@ -822,6 +863,18 @@ export class ComprasController {
 
       compraDoc.estado = 'pago_pendiente';
       await compra.save();
+
+      // Notificar al acreedor que el deudor dice haber pagado
+      const acreedorForPayment = await UsuarioModel.findById(compra.acreedorId);
+      const deudorForPayment = await UsuarioModel.findById(compra.deudorId);
+      if (acreedorForPayment?.pushToken && deudorForPayment) {
+        const montoFormatted = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(compra.montoDeudor);
+        await sendPushNotification([acreedorForPayment.pushToken], {
+          title: `${deudorForPayment.username} dice haber pagado`,
+          body: `${compra.descripcion} — ${montoFormatted}`,
+          data: { type: 'payment_requested', compraId: id },
+        });
+      }
 
       const updated = await ComprasModel.findById(id)
         .populate('acreedorId', 'username avatarUrl')
@@ -957,6 +1010,17 @@ export class ComprasController {
 
       compraDoc.estado = 'rechazado';
       await compra.save();
+
+      // Notificar al acreedor
+      const acreedorForReject = await UsuarioModel.findById(compra.acreedorId);
+      const deudorForReject = await UsuarioModel.findById(compra.deudorId);
+      if (acreedorForReject?.pushToken && deudorForReject) {
+        await sendPushNotification([acreedorForReject.pushToken], {
+          title: `${deudorForReject.username} rechazó tu cobro`,
+          body: compra.descripcion,
+          data: { type: 'charge_rejected', compraId: id },
+        });
+      }
 
       const updated = await ComprasModel.findById(id)
         .populate('acreedorId', 'username avatarUrl')

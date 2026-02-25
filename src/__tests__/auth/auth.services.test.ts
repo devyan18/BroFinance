@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { hash } from 'bcrypt';
 import {
   signUpService,
   signInService,
@@ -6,11 +7,19 @@ import {
   refreshTokenService,
   updateProfileService,
   setPasswordService,
+  changePasswordService,
+  forgotPasswordService,
+  resetPasswordService,
   generateAuthTokens,
   verifyToken,
 } from '../../modules/auth/auth.services.ts';
 import { UsuarioModel } from '../../modules/usuarios/usuario.model.ts';
 import { BlacklistModel } from '../../modules/auth/blacklistToken.model.ts';
+import { ResetTokenModel } from '../../modules/auth/resetToken.model.ts';
+
+vi.mock('../../utils/email.service', () => ({
+  sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+}));
 
 function expectError(err: unknown, statusCode: number) {
   expect(err).toMatchObject({ statusCode });
@@ -209,5 +218,132 @@ describe('generateAuthTokens / verifyToken', () => {
   it('throws 401 for invalid token', async () => {
     const err = await verifyToken('invalid-token').catch(e => e);
     expectError(err, 401);
+  });
+});
+
+describe('changePasswordService', () => {
+  it('changes password with valid old password', async () => {
+    const user = await UsuarioModel.create({
+      username: 'changepw',
+      email: 'changepw@example.com',
+      password: 'oldpass123',
+    });
+    await changePasswordService(user._id.toString(), 'oldpass123', 'newpass456');
+    const updated = await UsuarioModel.findOne({ email: 'changepw@example.com' }).select('+password');
+    const { compare } = await import('bcrypt');
+    const isValid = await compare('newpass456', updated!.password!);
+    expect(isValid).toBe(true);
+  });
+
+  it('throws 401 for wrong old password', async () => {
+    const user = await UsuarioModel.create({
+      username: 'wrongold',
+      email: 'wrongold@example.com',
+      password: 'correctpass',
+    });
+    const err = await changePasswordService(user._id.toString(), 'wrongold', 'newpass456').catch(e => e);
+    expectError(err, 401);
+  });
+
+  it('throws 404 for non-existent user', async () => {
+    const { Types } = await import('mongoose');
+    const fakeId = new Types.ObjectId().toString();
+    const err = await changePasswordService(fakeId, 'old', 'newpass456').catch(e => e);
+    expectError(err, 404);
+  });
+
+  it('throws 400 for Google-only account', async () => {
+    const user = await UsuarioModel.create({
+      username: 'googlepw',
+      email: 'googlepw@example.com',
+      provider: ['google'],
+      needsPasswordSetup: true,
+    });
+    const err = await changePasswordService(user._id.toString(), 'any', 'newpass456').catch(e => e);
+    expectError(err, 400);
+    expect(err.message).toContain('Google');
+  });
+});
+
+describe('forgotPasswordService', () => {
+  it('sends reset email for existing user (mock)', async () => {
+    const { sendPasswordResetEmail } = await import('../../utils/email.service.ts');
+    await UsuarioModel.create({
+      username: 'forgotuser',
+      email: 'forgot@example.com',
+      password: 'pass12345',
+    });
+    await forgotPasswordService('forgot@example.com');
+    expect(sendPasswordResetEmail).toHaveBeenCalledWith(
+      'forgot@example.com',
+      'forgotuser',
+      expect.stringContaining('/reset-password?token='),
+    );
+  });
+
+  it('does not throw for non-existent email (avoids enumeration)', async () => {
+    const { sendPasswordResetEmail } = await import('../../utils/email.service.ts');
+    vi.mocked(sendPasswordResetEmail).mockClear();
+    await forgotPasswordService('nonexistent@example.com');
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('resetPasswordService', () => {
+  it('resets password with valid token', async () => {
+    const user = await UsuarioModel.create({
+      username: 'resetuser',
+      email: 'reset@example.com',
+      password: 'oldpass',
+    });
+    const rawToken = 'abc123rawtoken';
+    const hashedToken = await hash(rawToken, 8);
+    await ResetTokenModel.create({
+      userId: user._id,
+      token: hashedToken,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    });
+    await resetPasswordService(user._id.toString(), rawToken, 'newpass789');
+    const updated = await UsuarioModel.findOne({ email: 'reset@example.com' }).select('+password');
+    const { compare } = await import('bcrypt');
+    const isValid = await compare('newpass789', updated!.password!);
+    expect(isValid).toBe(true);
+    const tokenDoc = await ResetTokenModel.findOne({ userId: user._id });
+    expect(tokenDoc).toBeNull(); // token should be deleted after use
+  });
+
+  it('throws 400 for invalid token', async () => {
+    const user = await UsuarioModel.create({
+      username: 'invalidtoken',
+      email: 'invalid@example.com',
+      password: 'oldpass',
+    });
+    const rawToken = 'validraw';
+    const hashedToken = await hash(rawToken, 8);
+    await ResetTokenModel.create({
+      userId: user._id,
+      token: hashedToken,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    });
+    const err = await resetPasswordService(user._id.toString(), 'wrongrawtoken', 'newpass').catch(e => e);
+    expectError(err, 400);
+  });
+
+  it('throws 400 for expired token', async () => {
+    const user = await UsuarioModel.create({
+      username: 'expireduser',
+      email: 'expired@example.com',
+      password: 'oldpass',
+    });
+    const rawToken = 'expiredraw';
+    const hashedToken = await hash(rawToken, 8);
+    await ResetTokenModel.create({
+      userId: user._id,
+      token: hashedToken,
+      expiresAt: new Date(Date.now() - 1000), // already expired
+    });
+    const err = await resetPasswordService(user._id.toString(), rawToken, 'newpass').catch(e => e);
+    expectError(err, 400);
+    expect(err.message).toContain('expir');
   });
 });

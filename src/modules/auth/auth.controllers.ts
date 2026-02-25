@@ -6,7 +6,7 @@
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { UsuarioModel } from '../usuarios/usuario.model.ts';
-import { signInService, signOutService, signUpService, updateProfileService, setPasswordService } from './auth.services.ts';
+import { signInService, signOutService, signUpService, updateProfileService, setPasswordService, changePasswordService, forgotPasswordService, resetPasswordService } from './auth.services.ts';
 import { googleAuthService } from './auth.google.service.ts';
 import { sendSuccess, sendError } from '../../utils/response.ts';
 import { AuthenticatedRequest } from '../../types/index.ts';
@@ -174,6 +174,55 @@ export const getUserPublicController = async (req: AuthenticatedRequest, res: Re
       email: showEmail ? u.email : undefined,
     },
   });
+};
+
+/**
+ * Register or update Expo push token
+ * @route POST /api/v1/auth/push-token
+ */
+export const savePushTokenController = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  if (!req.user) throw new UnauthorizedError('User not authenticated');
+  const { pushToken } = req.body;
+  if (!pushToken) throw new BadRequestError('pushToken es requerido');
+  await UsuarioModel.findByIdAndUpdate(req.user.userId, { pushToken });
+  sendSuccess(res, null, 'Push token guardado');
+};
+
+/**
+ * Change password with current password
+ * @route POST /api/v1/auth/change-password
+ */
+export const changePasswordController = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  if (!req.user) throw new UnauthorizedError('User not authenticated');
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) throw new BadRequestError('oldPassword y newPassword son requeridos');
+  if (newPassword.length < 6) throw new BadRequestError('La nueva contraseña debe tener al menos 6 caracteres');
+  await changePasswordService(req.user.userId, oldPassword, newPassword);
+  sendSuccess(res, null, 'Contraseña actualizada correctamente');
+};
+
+/**
+ * Request password reset email
+ * @route POST /api/v1/auth/forgot-password
+ */
+export const forgotPasswordController = async (req: Request, res: Response): Promise<void> => {
+  const { email } = req.body;
+  if (!email) throw new BadRequestError('El email es requerido');
+  await forgotPasswordService(email);
+  // Siempre devolver éxito para evitar enumeración de emails
+  sendSuccess(res, null, 'Si el email existe, recibirás un enlace para restablecer tu contraseña');
+};
+
+/**
+ * Reset password using token from email
+ * @route POST /api/v1/auth/reset-password
+ */
+export const resetPasswordController = async (req: Request, res: Response): Promise<void> => {
+  const { userId, token, newPassword } = req.body;
+  if (!userId || !token || !newPassword) throw new BadRequestError('userId, token y newPassword son requeridos');
+  if (newPassword.length < 6) throw new BadRequestError('La contraseña debe tener al menos 6 caracteres');
+  await resetPasswordService(userId, token, newPassword);
+  sendSuccess(res, null, 'Contraseña restablecida correctamente');
 };
 
 /**

@@ -16,5 +16,13 @@ export const envConfig = {
   CLOUDINARY_CLOUD_NAME: env.get('CLOUDINARY_CLOUD_NAME').asString(),
   CLOUDINARY_API_KEY: env.get('CLOUDINARY_API_KEY').asString(),
   CLOUDINARY_API_SECRET: env.get('CLOUDINARY_API_SECRET').asString(),
+  // Email (nodemailer) - optional; required for forgot-password flow
+  EMAIL_HOST: env.get('EMAIL_HOST').default('').asString(),
+  EMAIL_PORT: env.get('EMAIL_PORT').default('587').asPortNumber(),
+  EMAIL_USER: env.get('EMAIL_USER').default('').asString(),
+  EMAIL_PASS: env.get('EMAIL_PASS').default('').asString(),
+  EMAIL_FROM: env.get('EMAIL_FROM').default('').asString(),
+  // Frontend URL used in reset-password links — falls back to CORS_ORIGIN if empty
+  FRONTEND_URL: env.get('FRONTEND_URL').default('').asString(),
 };
 

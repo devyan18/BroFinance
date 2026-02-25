@@ -14,6 +14,10 @@ import {
   refreshTokenController,
   googleAuthController,
   setPasswordController,
+  changePasswordController,
+  forgotPasswordController,
+  resetPasswordController,
+  savePushTokenController,
 } from './auth.controllers.ts';
 import { validateData } from '../middlewares/validateRoute.ts';
 import {
@@ -120,6 +124,34 @@ authRouter.post(
   },
   asyncHandler(uploadAvatarController),
 );
+
+/**
+ * @route   POST /api/v1/auth/push-token
+ * @desc    Register or update Expo push token
+ * @access  Private
+ */
+authRouter.post('/auth/push-token', authenticate, asyncHandler(savePushTokenController));
+
+/**
+ * @route   POST /api/v1/auth/change-password
+ * @desc    Change password using the current password
+ * @access  Private
+ */
+authRouter.post('/auth/change-password', authenticate, asyncHandler(changePasswordController));
+
+/**
+ * @route   POST /api/v1/auth/forgot-password
+ * @desc    Send reset password email
+ * @access  Public
+ */
+authRouter.post('/auth/forgot-password', asyncHandler(forgotPasswordController));
+
+/**
+ * @route   POST /api/v1/auth/reset-password
+ * @desc    Reset password using token from email
+ * @access  Public
+ */
+authRouter.post('/auth/reset-password', asyncHandler(resetPasswordController));
 
 export { authRouter };
 

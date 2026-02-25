@@ -13,8 +13,9 @@ export default defineConfig({
       JWT_SECRET: 'test-jwt-secret-for-vitest-only-do-not-use-in-prod',
       NODE_ENV: 'test',
       PORT: '0',
-      CORS_ORIGIN: '*',
+      CORS_ORIGIN: 'http://localhost:5173',
       MONGODB_URI: 'mongodb://127.0.0.1:27017/placeholder',
+      FRONTEND_URL: 'http://localhost:5173',
     },
     coverage: {
       provider: 'v8',

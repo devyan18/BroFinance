@@ -37,3 +37,16 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
 
+      # Optional — email for forgot-password flow (nodemailer)
+      # FRONTEND_URL es innecesario: el backend reutiliza CORS_ORIGIN para los links de reset-password
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+

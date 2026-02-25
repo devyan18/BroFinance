@@ -4,12 +4,15 @@
  */
 
 import { BlacklistModel } from './blacklistToken.model.ts';
+import { ResetTokenModel } from './resetToken.model.ts';
 import { UsuarioModel } from '../usuarios/usuario.model.ts';
 import { envConfig } from '../../settings/environments.ts';
-import { compare } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
+import { randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { UnauthorizedError, ConflictError, InternalServerError, NotFoundError, BadRequestError } from '../../utils/errors.ts';
 import { JwtPayload, AuthTokens, AuthResponse, UserResponse } from '../../types/index.ts';
+import { sendPasswordResetEmail } from '../../utils/email.service.ts';
 
 const timesOfExpiration = {
   accessToken: 60 * 15, // 15 minutes
@@ -188,6 +191,80 @@ export const refreshTokenService = async (refreshToken: string): Promise<string>
 export const createAccessTokenService = async (refreshToken: string): Promise<string> => {
   const { userId } = await verifyToken(refreshToken);
   return await createToken({ userId }, timesOfExpiration.accessToken);
+};
+
+/**
+ * Change password using the current (old) password
+ */
+export const changePasswordService = async (
+  userId: string,
+  oldPassword: string,
+  newPassword: string,
+): Promise<void> => {
+  const user = await UsuarioModel.findById(userId, '+password');
+  if (!user) throw new NotFoundError('Usuario no encontrado');
+
+  if (!user.password) {
+    throw new BadRequestError('Esta cuenta usa Google. Usá "Olvidé mi contraseña" para establecer una.');
+  }
+
+  const isValid = await compare(oldPassword, user.password);
+  if (!isValid) throw new UnauthorizedError('La contraseña actual es incorrecta');
+
+  user.password = newPassword;
+  await user.save();
+};
+
+/**
+ * Send password reset email with a token link
+ */
+export const forgotPasswordService = async (email: string): Promise<void> => {
+  const user = await UsuarioModel.findOne({ email: email.toLowerCase() });
+  // Silenciar si el usuario no existe (evita enumeración)
+  if (!user) return;
+
+  // Eliminar tokens anteriores del usuario
+  await ResetTokenModel.deleteMany({ userId: user._id });
+
+  const rawToken = randomBytes(32).toString('hex');
+  const hashedToken = await hash(rawToken, 8);
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+
+  await ResetTokenModel.create({ userId: user._id, token: hashedToken, expiresAt });
+
+  const base = (envConfig.FRONTEND_URL || envConfig.CORS_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
+  const resetUrl = `${base}/reset-password?token=${rawToken}&userId=${user._id}`;
+  await sendPasswordResetEmail(user.email, user.username, resetUrl);
+};
+
+/**
+ * Reset password using the token from the email link
+ */
+export const resetPasswordService = async (
+  userId: string,
+  rawToken: string,
+  newPassword: string,
+): Promise<void> => {
+  const resetDoc = await ResetTokenModel.findOne({ userId });
+  if (!resetDoc) throw new BadRequestError('Token inválido o expirado');
+
+  if (resetDoc.expiresAt < new Date()) {
+    await ResetTokenModel.deleteOne({ _id: resetDoc._id });
+    throw new BadRequestError('El token expiró. Solicitá uno nuevo.');
+  }
+
+  const isValid = await compare(rawToken, resetDoc.token);
+  if (!isValid) throw new BadRequestError('Token inválido o expirado');
+
+  const user = await UsuarioModel.findById(userId, '+password');
+  if (!user) throw new NotFoundError('Usuario no encontrado');
+
+  user.password = newPassword;
+  if (!user.provider.includes('local')) user.provider.push('local');
+  user.needsPasswordSetup = false;
+  await user.save();
+
+  await ResetTokenModel.deleteOne({ _id: resetDoc._id });
 };
 
 /**
