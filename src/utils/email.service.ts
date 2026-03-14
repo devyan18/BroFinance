@@ -46,3 +46,31 @@ export async function sendPasswordResetEmail(
     text: `Hola ${username},\n\nRestablece tu contraseña entrando a este enlace:\n${urlTrimmed}\n\nExpira en 30 minutos.\n\nSi el enlace no funciona, copiá y pegá la URL en el navegador.`,
   });
 }
+
+/**
+ * Send email when someone charges the user (new cobro).
+ */
+export async function sendNewChargeEmail(
+  to: string,
+  toUsername: string,
+  acreedorUsername: string,
+  descripcion: string,
+  montoFormatted: string,
+): Promise<void> {
+  const from = envConfig.EMAIL_FROM ?? envConfig.EMAIL_USER;
+  await getTransporter().sendMail({
+    from: `"Bro Finances" <${from}>`,
+    to,
+    subject: `${acreedorUsername} te cobró — Bro Finances`,
+    html: `<!DOCTYPE html><html><body style="font-family:sans-serif;background:#0B0E11;color:#EAECEF;padding:24px;margin:0;">
+<p>Hola <strong>${toUsername}</strong>,</p>
+<p><strong>@${acreedorUsername}</strong> te registró un cobro en Bro Finances.</p>
+<p style="background:#181A20;border:1px solid #2B3139;border-radius:12px;padding:16px;margin:16px 0;">
+  <strong>${descripcion}</strong><br/>
+  <span style="font-size:18px;font-weight:700;color:#7F00FF;">${montoFormatted}</span>
+</p>
+<p style="font-size:12px;color:#848E9C;">Entrá a la app para ver el detalle y aceptar o rechazar el gasto.</p>
+</body></html>`,
+    text: `Hola ${toUsername},\n\n@${acreedorUsername} te registró un cobro: ${descripcion} — ${montoFormatted}.\n\nEntrá a la app para ver el detalle.`,
+  });
+}

@@ -6,6 +6,7 @@
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { UsuarioModel } from '../usuarios/usuario.model.ts';
+import { getSettings, updateSettings } from '../usuarios/user-settings.service.ts';
 import { signInService, signOutService, signUpService, updateProfileService, setPasswordService, changePasswordService, forgotPasswordService, resetPasswordService } from './auth.services.ts';
 import { googleAuthService } from './auth.google.service.ts';
 import { sendSuccess, sendError } from '../../utils/response.ts';
@@ -110,7 +111,10 @@ export const getMeController = async (req: AuthenticatedRequest, res: Response):
     throw new NotFoundError('User not found');
   }
 
-  sendSuccess(res, { user: user.toJSON() });
+  const settings = await getSettings(userId);
+  const userJson = user.toJSON() as Record<string, unknown>;
+  Object.assign(userJson, settings);
+  sendSuccess(res, { user: userJson });
 };
 
 /**
@@ -124,9 +128,15 @@ export const updateProfileController = async (req: AuthenticatedRequest, res: Re
     throw new UnauthorizedError('User not authenticated');
   }
 
-  const { username, cbu, avatarUrl, showCbu, showEmail } = req.body;
+  const { username, cbu, avatarUrl, showCbu, showEmail, notifyNewChargesEmail, notifyNewChargesPush } = req.body;
   const user = await updateProfileService(userId, { username, cbu, avatarUrl, showCbu, showEmail });
-  sendSuccess(res, { user }, 'Perfil actualizado correctamente');
+  const settingsUpdates: { notifyNewChargesEmail?: boolean; notifyNewChargesPush?: boolean } = {};
+  if (notifyNewChargesEmail !== undefined) settingsUpdates.notifyNewChargesEmail = notifyNewChargesEmail;
+  if (notifyNewChargesPush !== undefined) settingsUpdates.notifyNewChargesPush = notifyNewChargesPush;
+  const settings = Object.keys(settingsUpdates).length > 0 ? await updateSettings(userId, settingsUpdates) : await getSettings(userId);
+  const userJson = user as Record<string, unknown>;
+  Object.assign(userJson, settings);
+  sendSuccess(res, { user: userJson }, 'Perfil actualizado correctamente');
 };
 
 /**

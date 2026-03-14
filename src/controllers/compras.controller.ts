@@ -6,6 +6,9 @@ import { UsuarioModel } from '../modules/usuarios/usuario.model';
 import { getFriendIds, areFriends } from '../modules/friends/friends.services.ts';
 import { Types } from 'mongoose';
 import { sendPushNotification } from '../utils/notifications.service.ts';
+import { sendNewChargeEmail } from '../utils/email.service.ts';
+import { getSettings } from '../modules/usuarios/user-settings.service.ts';
+import { computeBilateralBalance } from '../modules/compras/balance.service.ts';
 
 /**
  * Controlador para operaciones de gastos entre roomies.
@@ -118,16 +121,30 @@ export class ComprasController {
 
       await compra.save();
 
-      // Notificar al deudor si es un gasto compartido
+      // Notificar al deudor si es un gasto compartido (push y/o email según preferencias)
       if (!isSolo) {
         const deudorDoc = await UsuarioModel.findById(deudorId);
-        if (deudorDoc?.pushToken) {
-          const montoFormatted = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(montoDeudor);
+        const settings = await getSettings(deudorId.toString());
+        const montoFormatted = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(montoDeudor);
+        if (deudorDoc?.pushToken && settings.notifyNewChargesPush) {
           await sendPushNotification([deudorDoc.pushToken], {
             title: `${acreedor.username} te cobró`,
             body: `${descripcion} — ${montoFormatted}`,
             data: { type: 'new_charge', compraId: String(compra._id) },
           });
+        }
+        if (settings.notifyNewChargesEmail && deudorDoc?.email) {
+          try {
+            await sendNewChargeEmail(
+              deudorDoc.email,
+              deudorDoc.username,
+              acreedor.username,
+              descripcion,
+              montoFormatted,
+            );
+          } catch (err) {
+            console.error('Error sending new charge email:', err);
+          }
         }
       }
 
@@ -222,6 +239,36 @@ export class ComprasController {
         ),
       );
 
+      // Notificar a cada deudor (push y/o email según preferencias)
+      const montoByDeudor = new Map(deudores.map((d) => [d.deudorId, d.montoDeudor]));
+      for (const compra of created) {
+        const deudorIdStr = String(compra.deudorId);
+        const deudorDoc = await UsuarioModel.findById(deudorIdStr);
+        const settings = await getSettings(deudorIdStr);
+        const montoDeudor = montoByDeudor.get(deudorIdStr) ?? compra.montoDeudor;
+        const montoFormatted = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(montoDeudor);
+        if (deudorDoc?.pushToken && settings.notifyNewChargesPush) {
+          await sendPushNotification([deudorDoc.pushToken], {
+            title: `${acreedor.username} te cobró`,
+            body: `${compra.descripcion} — ${montoFormatted}`,
+            data: { type: 'new_charge', compraId: String(compra._id) },
+          });
+        }
+        if (settings.notifyNewChargesEmail && deudorDoc?.email) {
+          try {
+            await sendNewChargeEmail(
+              deudorDoc.email,
+              deudorDoc.username,
+              acreedor.username,
+              compra.descripcion,
+              montoFormatted,
+            );
+          } catch (err) {
+            console.error('Error sending new charge email:', err);
+          }
+        }
+      }
+
       res.status(201).json({
         success: true,
         data: created.map((c) => ({
@@ -310,8 +357,71 @@ export class ComprasController {
   }
 
   /**
-   * Obtener balance con un roommate específico.
+   * Obtener todos los balances con roommates (para refresco en segundo plano).
+   * GET /api/compras/balances
+   */
+  static async getBalances(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(404).json({
+          success: false,
+          error: 'Usuario no sincronizado',
+          code: 'USER_NOT_SYNCED',
+        });
+        return;
+      }
+
+      const friendIds = await getFriendIds(req.user.userId);
+      if (friendIds.length === 0) {
+        res.status(200).json({ success: true, data: [] });
+        return;
+      }
+
+      const compras = await ComprasModel.find({
+        $or: [{ acreedorId: req.user.userId }, { deudorId: req.user.userId }],
+      })
+        .select('acreedorId deudorId')
+        .lean();
+
+      const roommateIds = new Set<string>();
+      compras.forEach((c: { acreedorId: { toString: () => string }; deudorId: { toString: () => string } }) => {
+        const aid = c.acreedorId?.toString?.();
+        const did = c.deudorId?.toString?.();
+        const myId = req.user!.userId;
+        if (aid && aid !== myId) roommateIds.add(aid);
+        if (did && did !== myId) roommateIds.add(did);
+      });
+      const allowedIds = Array.from(roommateIds).filter((id) => friendIds.includes(id));
+      if (allowedIds.length === 0) {
+        res.status(200).json({ success: true, data: [] });
+        return;
+      }
+
+      const data = await Promise.all(
+        allowedIds.map(async (roommateId) => {
+          const result = await computeBilateralBalance(req.user!.userId, roommateId);
+          return { roommateId, ...result };
+        }),
+      );
+
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('Error en getBalances:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error al obtener balances',
+        code: 'BALANCE_ERROR',
+      });
+    }
+  }
+
+  /**
+   * Obtener balance neto con un roommate específico.
    * GET /api/compras/balance/:roommateId
+   * Incluye solo compras aceptado/pago_pendiente; netea lo que me debe con lo que yo debo.
    */
   static async getBalance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -325,63 +435,13 @@ export class ComprasController {
       }
 
       const { roommateId } = req.params;
-
-      const matchEstado = { $or: [{ estado: 'aceptado' }, { estado: 'pago_pendiente' }, { estado: { $exists: false } }] };
-
-      // Calcular total de compras donde el usuario es acreedor
-      const comoAcreedor = await ComprasModel.aggregate([
-        {
-          $match: {
-            $and: [
-              {
-                acreedorId: new Types.ObjectId(req.user.userId),
-                deudorId: new Types.ObjectId(roommateId),
-              },
-              matchEstado,
-            ],
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: '$montoAcreedor' },
-          },
-        },
-      ]);
-
-      // Calcular total de compras donde el usuario es deudor
-      const comoDeudor = await ComprasModel.aggregate([
-        {
-          $match: {
-            $and: [
-              {
-                acreedorId: new Types.ObjectId(roommateId),
-                deudorId: new Types.ObjectId(req.user.userId),
-              },
-              matchEstado,
-            ],
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: '$montoDeudor' },
-          },
-        },
-      ]);
-
-      const totalAcreedor = comoAcreedor[0]?.total || 0;
-      const totalDeudor = comoDeudor[0]?.total || 0;
-      const balance = totalAcreedor - totalDeudor;
+      const result = await computeBilateralBalance(req.user.userId, roommateId);
 
       res.status(200).json({
         success: true,
         data: {
           roommateId,
-          totalACobrar: totalAcreedor,
-          totalAPagar: totalDeudor,
-          balance,
-          estado: balance > 0 ? 'te deben' : balance < 0 ? 'debes' : 'cuadrado',
+          ...result,
         },
       });
     } catch (error) {
@@ -484,17 +544,24 @@ export class ComprasController {
       }
 
       const usuarios = await UsuarioModel.find({ _id: { $in: friendIds } })
-        .select('username avatarUrl balance')
+        .select('username avatarUrl')
         .sort({ username: 1 });
+
+      const data = await Promise.all(
+        usuarios.map(async (u) => {
+          const { balance } = await computeBilateralBalance(req.user!.userId, u._id.toString());
+          return {
+            id: u._id,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+            balance,
+          };
+        }),
+      );
 
       res.status(200).json({
         success: true,
-        data: usuarios.map((u) => ({
-          id: u._id,
-          username: u.username,
-          avatarUrl: u.avatarUrl,
-          balance: u.balance,
-        })),
+        data,
       });
     } catch (error) {
       console.error('Error en getUsuarios:', error);
@@ -550,16 +617,23 @@ export class ComprasController {
       }
 
       const roommates = await UsuarioModel.find({ _id: { $in: allowedIds } })
-        .select('username avatarUrl balance');
+        .select('username avatarUrl');
+
+      const data = await Promise.all(
+        roommates.map(async (u) => {
+          const { balance } = await computeBilateralBalance(req.user!.userId, u._id.toString());
+          return {
+            id: u._id,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+            balance,
+          };
+        }),
+      );
 
       res.status(200).json({
         success: true,
-        data: roommates.map((u) => ({
-          id: u._id,
-          username: u.username,
-          avatarUrl: u.avatarUrl,
-          balance: u.balance,
-        })),
+        data,
       });
     } catch (error) {
       console.error('Error en getRoommates:', error);

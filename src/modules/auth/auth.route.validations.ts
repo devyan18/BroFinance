@@ -63,6 +63,8 @@ export const updateProfileSchema = {
       ),
       showCbu: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
       showEmail: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
+      notifyNewChargesEmail: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
+      notifyNewChargesPush: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
     })
     .partial(),
 };

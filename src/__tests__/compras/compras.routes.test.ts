@@ -274,11 +274,28 @@ describe('GET /compras/roommates', () => {
     const debtor = await createTestUser();
     await makeFriends(creditor._id, debtor._id);
     const tipoId = await getDefaultTipoId();
-    await createCompra({ acreedorId: creditor._id, deudorId: debtor._id, tipoId });
+    await createCompra({ acreedorId: creditor._id, deudorId: debtor._id, tipoId, estado: 'aceptado', montoDeudor: 40 });
 
     const res = await request(app).get(`${BASE}/roommates`).set(authHeaders(creditor));
     expect(res.status).toBe(200);
-    expect(res.body.data.some((r: any) => r.username === debtor.username)).toBe(true);
+    const roommate = res.body.data.find((r: any) => r.username === debtor.username);
+    expect(roommate).toBeDefined();
+    expect(roommate.balance).toBe(40);
+  });
+
+  it('returns bilateral balance per roommate (net with that user)', async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    await makeFriends(a._id, b._id);
+    const tipoId = await getDefaultTipoId();
+    await createCompra({ acreedorId: a._id, deudorId: b._id, tipoId, montoDeudor: 100, estado: 'aceptado' });
+    await createCompra({ acreedorId: b._id, deudorId: a._id, tipoId, montoDeudor: 30, estado: 'aceptado' });
+
+    const res = await request(app).get(`${BASE}/roommates`).set(authHeaders(a));
+    expect(res.status).toBe(200);
+    const roommate = res.body.data.find((r: any) => r.username === b.username);
+    expect(roommate).toBeDefined();
+    expect(roommate.balance).toBe(70);
   });
 
   it('returns empty array when no shared expenses exist', async () => {
@@ -307,13 +324,171 @@ describe('GET /compras/balance/:roommateId', () => {
       .get(`${BASE}/balance/${debtor._id}`)
       .set(authHeaders(creditor));
     expect(res.status).toBe(200);
-    expect(res.body.data.balance).toBeDefined();
+    expect(res.body.data.balance).toBe(50);
+    expect(res.body.data.totalACobrar).toBe(50);
+    expect(res.body.data.totalAPagar).toBe(0);
+    expect(res.body.data.estado).toBe('te deben');
     expect(res.body.data.roommateId).toBe(debtor._id);
+  });
+
+  it('nets balances: creditor sees net when debtor also charged them', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id, userB._id);
+    const tipoId = await getDefaultTipoId();
+    await createCompra({
+      acreedorId: userA._id,
+      deudorId: userB._id,
+      tipoId,
+      montoDeudor: 100,
+      estado: 'aceptado',
+    });
+    await createCompra({
+      acreedorId: userB._id,
+      deudorId: userA._id,
+      tipoId,
+      montoDeudor: 60,
+      estado: 'aceptado',
+    });
+
+    const resA = await request(app)
+      .get(`${BASE}/balance/${userB._id}`)
+      .set(authHeaders(userA));
+    expect(resA.status).toBe(200);
+    expect(resA.body.data.balance).toBe(40);
+    expect(resA.body.data.totalACobrar).toBe(100);
+    expect(resA.body.data.totalAPagar).toBe(60);
+    expect(resA.body.data.estado).toBe('te deben');
+
+    const resB = await request(app)
+      .get(`${BASE}/balance/${userA._id}`)
+      .set(authHeaders(userB));
+    expect(resB.status).toBe(200);
+    expect(resB.body.data.balance).toBe(-40);
+    expect(resB.body.data.estado).toBe('debes');
+  });
+
+  it('nets so that if reverse charges exceed debt, balance flips (other owes me)', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id, userB._id);
+    const tipoId = await getDefaultTipoId();
+    await createCompra({
+      acreedorId: userB._id,
+      deudorId: userA._id,
+      tipoId,
+      montoDeudor: 100,
+      estado: 'aceptado',
+    });
+    await createCompra({
+      acreedorId: userA._id,
+      deudorId: userB._id,
+      tipoId,
+      montoDeudor: 150,
+      estado: 'aceptado',
+    });
+
+    const res = await request(app)
+      .get(`${BASE}/balance/${userB._id}`)
+      .set(authHeaders(userA));
+    expect(res.status).toBe(200);
+    expect(res.body.data.balance).toBe(50);
+    expect(res.body.data.estado).toBe('te deben');
+  });
+
+  it('balance is dynamic and matches historial: GET balance equals sum from GET compras (usuario)', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id, userB._id);
+    const tipoId = await getDefaultTipoId();
+    await createCompra({
+      acreedorId: userB._id,
+      deudorId: userA._id,
+      tipoId,
+      montoDeudor: 100,
+      estado: 'aceptado',
+    });
+    await createCompra({
+      acreedorId: userA._id,
+      deudorId: userB._id,
+      tipoId,
+      montoDeudor: 30,
+      estado: 'aceptado',
+    });
+    await createCompra({
+      acreedorId: userA._id,
+      deudorId: userB._id,
+      tipoId,
+      montoDeudor: 20,
+      estado: 'pago_pendiente',
+    });
+
+    const historialRes = await request(app)
+      .get(`${BASE}?usuario=${userB._id}&limit=100`)
+      .set(authHeaders(userA));
+    expect(historialRes.status).toBe(200);
+    const compras = historialRes.body.data as any[];
+
+    const estadosQueCuentan = ['aceptado', 'pago_pendiente'];
+    let totalACobrar = 0;
+    let totalAPagar = 0;
+    for (const c of compras) {
+      if (!estadosQueCuentan.includes(c.estado)) continue;
+      const acreedorId = c.acreedorId?._id ?? c.acreedorId;
+      const deudorId = c.deudorId?._id ?? c.deudorId;
+      const aid = typeof acreedorId === 'string' ? acreedorId : acreedorId?.toString?.();
+      const did = typeof deudorId === 'string' ? deudorId : deudorId?.toString?.();
+      if (aid === userA._id && did === userB._id) {
+        totalACobrar += c.montoAcreedor ?? c.montoDeudor ?? 0;
+      } else if (aid === userB._id && did === userA._id) {
+        totalAPagar += c.montoDeudor ?? 0;
+      }
+    }
+    const expectedBalance = totalACobrar - totalAPagar;
+
+    const balanceRes = await request(app)
+      .get(`${BASE}/balance/${userB._id}`)
+      .set(authHeaders(userA));
+    expect(balanceRes.status).toBe(200);
+    expect(balanceRes.body.data.balance).toBe(expectedBalance);
+    expect(balanceRes.body.data.totalACobrar).toBe(totalACobrar);
+    expect(balanceRes.body.data.totalAPagar).toBe(totalAPagar);
   });
 
   it('returns 401 without auth', async () => {
     const fakeId = new Types.ObjectId().toString();
     const res = await request(app).get(`${BASE}/balance/${fakeId}`);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /compras/balances', () => {
+  it('returns all bilateral balances for roommates', async () => {
+    const userA = await createTestUser();
+    const userB = await createTestUser();
+    await makeFriends(userA._id, userB._id);
+    const tipoId = await getDefaultTipoId();
+    await createCompra({
+      acreedorId: userA._id,
+      deudorId: userB._id,
+      tipoId,
+      montoDeudor: 25,
+      estado: 'aceptado',
+    });
+
+    const res = await request(app)
+      .get(`${BASE}/balances`)
+      .set(authHeaders(userA));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    const withB = res.body.data.find((b: any) => b.roommateId === userB._id);
+    expect(withB).toBeDefined();
+    expect(withB.balance).toBe(25);
+    expect(withB.estado).toBe('te deben');
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request(app).get(`${BASE}/balances`);
     expect(res.status).toBe(401);
   });
 });

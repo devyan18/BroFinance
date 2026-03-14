@@ -47,6 +47,13 @@ comprasRouter.get('/compras/usuarios', authenticate, asyncHandler(ComprasControl
 comprasRouter.get('/compras/roommates', authenticate, asyncHandler(ComprasController.getRoommates));
 
 /**
+ * @route   GET /api/v1/compras/balances
+ * @desc    Get all balances with roommates (for background refresh)
+ * @access  Private
+ */
+comprasRouter.get('/compras/balances', authenticate, asyncHandler(ComprasController.getBalances));
+
+/**
  * @route   GET /api/v1/compras/balance/:roommateId
  * @desc    Get balance with a specific roommate
  * @access  Private
