@@ -15,6 +15,7 @@ import { envConfig } from './settings/environments.ts';
 import { authRouter } from './modules/auth/auth.routes.ts';
 import { comprasRouter } from './modules/compras/compras.routes.ts';
 import { paymentsRouter } from './modules/payments/payments.routes.ts';
+import { walletsRouter } from './modules/wallets/wallets.routes.ts';
 import { friendsRouter } from './modules/friends/friends.routes.ts';
 import { connectDb } from './settings/connectDb.ts';
 import { asyncHandler, errorHandler, notFoundHandler } from './middlewares/errorHandler.ts';
@@ -83,6 +84,7 @@ app.use('/api/v1/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/api/v1', authRouter);
 app.use('/api/v1', comprasRouter);
 app.use('/api/v1', paymentsRouter);
+app.use('/api/v1', walletsRouter);
 app.use('/api/v1', friendsRouter);
 
 // 404 handler - must be after all routes

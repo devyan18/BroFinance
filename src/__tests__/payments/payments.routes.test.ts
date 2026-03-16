@@ -31,8 +31,42 @@ describe('POST /payments/transfer-info', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.data.wallets).toBeDefined();
+    expect(Array.isArray(res.body.data.wallets)).toBe(true);
+    expect(res.body.data.wallets.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.data.wallets[0].cbu).toBe('1234567890123456789012');
     expect(res.body.data.monto).toBe(75);
     expect(res.body.data.acreedorUsername).toBe(creditor.username);
+  });
+
+  it('returns transfer amount as NET balance (difference between mutual debts)', async () => {
+    const user1 = await createTestUser({ cbu: '1234567890123456789012' });
+    const user2 = await createTestUser();
+    await makeFriends(user1._id, user2._id);
+    const tipoId = await getDefaultTipoId();
+    // user1 cobra 100 a user2; user2 cobra 80 a user1 → net: user2 paga 20 a user1
+    await createCompra({
+      acreedorId: user1._id,
+      deudorId: user2._id,
+      tipoId,
+      montoDeudor: 100,
+      estado: 'aceptado',
+    });
+    await createCompra({
+      acreedorId: user2._id,
+      deudorId: user1._id,
+      tipoId,
+      montoDeudor: 80,
+      estado: 'aceptado',
+    });
+
+    const res = await request(app)
+      .post(`${BASE}/transfer-info`)
+      .set(authHeaders(user2))
+      .send({ acreedorId: user1._id });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.monto).toBe(20);
   });
 
   it('returns 400 when there are no pending debts', async () => {

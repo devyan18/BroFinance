@@ -5,6 +5,7 @@
 
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { Types } from 'mongoose';
 import { UsuarioModel } from '../usuarios/usuario.model.ts';
 import { getSettings, updateSettings } from '../usuarios/user-settings.service.ts';
 import { signInService, signOutService, signUpService, updateProfileService, setPasswordService, changePasswordService, forgotPasswordService, resetPasswordService } from './auth.services.ts';
@@ -13,6 +14,8 @@ import { sendSuccess, sendError } from '../../utils/response.ts';
 import { AuthenticatedRequest } from '../../types/index.ts';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '../../utils/errors.ts';
 import { uploadAvatarToCloudinary } from '../../utils/cloudinary.ts';
+import { UserWalletModel } from '../wallets/user-wallet.model.ts';
+import { listWalletsByUserId } from '../wallets/wallets.service.ts';
 
 /**
  * Sign in or sign up with Google
@@ -112,8 +115,9 @@ export const getMeController = async (req: AuthenticatedRequest, res: Response):
   }
 
   const settings = await getSettings(userId);
+  const wallets = await listWalletsByUserId(userId);
   const userJson = user.toJSON() as Record<string, unknown>;
-  Object.assign(userJson, settings);
+  Object.assign(userJson, settings, { wallets });
   sendSuccess(res, { user: userJson });
 };
 
@@ -128,14 +132,30 @@ export const updateProfileController = async (req: AuthenticatedRequest, res: Re
     throw new UnauthorizedError('User not authenticated');
   }
 
-  const { username, cbu, avatarUrl, showCbu, showEmail, notifyNewChargesEmail, notifyNewChargesPush } = req.body;
+  const { username, cbu, avatarUrl, showCbu, showEmail, notifyNewChargesEmail, notifyNewChargesPush, favoriteWalletId } =
+    req.body;
   const user = await updateProfileService(userId, { username, cbu, avatarUrl, showCbu, showEmail });
-  const settingsUpdates: { notifyNewChargesEmail?: boolean; notifyNewChargesPush?: boolean } = {};
+  const settingsUpdates: {
+    notifyNewChargesEmail?: boolean;
+    notifyNewChargesPush?: boolean;
+    favoriteWalletId?: string | null;
+  } = {};
   if (notifyNewChargesEmail !== undefined) settingsUpdates.notifyNewChargesEmail = notifyNewChargesEmail;
   if (notifyNewChargesPush !== undefined) settingsUpdates.notifyNewChargesPush = notifyNewChargesPush;
-  const settings = Object.keys(settingsUpdates).length > 0 ? await updateSettings(userId, settingsUpdates) : await getSettings(userId);
-  const userJson = user as Record<string, unknown>;
-  Object.assign(userJson, settings);
+  if (favoriteWalletId !== undefined) {
+    if (favoriteWalletId) {
+      const belongs = await UserWalletModel.findOne({
+        _id: new Types.ObjectId(favoriteWalletId),
+        userId: new Types.ObjectId(userId),
+      });
+      if (!belongs) throw new BadRequestError('La billetera favorita no pertenece a tu cuenta');
+    }
+    settingsUpdates.favoriteWalletId = favoriteWalletId || null;
+  }
+  if (Object.keys(settingsUpdates).length > 0) await updateSettings(userId, settingsUpdates);
+  const settings = await getSettings(userId);
+  const wallets = await listWalletsByUserId(userId);
+  const userJson = { ...(user as Record<string, unknown>), ...settings, wallets };
   sendSuccess(res, { user: userJson }, 'Perfil actualizado correctamente');
 };
 
@@ -174,6 +194,7 @@ export const getUserPublicController = async (req: AuthenticatedRequest, res: Re
   const u = user.toObject();
   const showCbu = (u as any).showCbu !== false;
   const showEmail = (u as any).showEmail === true;
+  const wallets = showCbu ? await listWalletsByUserId(id) : [];
 
   sendSuccess(res, {
     user: {
@@ -182,6 +203,7 @@ export const getUserPublicController = async (req: AuthenticatedRequest, res: Re
       avatarUrl: u.avatarUrl,
       cbu: showCbu ? u.cbu : undefined,
       email: showEmail ? u.email : undefined,
+      wallets,
     },
   });
 };

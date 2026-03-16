@@ -65,6 +65,10 @@ export const updateProfileSchema = {
       showEmail: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
       notifyNewChargesEmail: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
       notifyNewChargesPush: z.union([z.boolean(), z.undefined(), z.null()]).optional(),
+      favoriteWalletId: z
+        .union([z.string().regex(/^[a-f0-9]{24}$/i), z.null(), z.undefined()])
+        .optional()
+        .transform((v) => (v === '' ? null : v)),
     })
     .partial(),
 };

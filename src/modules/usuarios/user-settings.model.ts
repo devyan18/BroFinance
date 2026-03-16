@@ -10,6 +10,7 @@ export interface IUserSettings extends Document {
   userId: Types.ObjectId;
   notifyNewChargesEmail: boolean;
   notifyNewChargesPush: boolean;
+  favoriteWalletId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +25,7 @@ const UserSettingsSchema = new Schema<IUserSettings>(
     },
     notifyNewChargesEmail: { type: Boolean, default: true },
     notifyNewChargesPush: { type: Boolean, default: true },
+    favoriteWalletId: { type: Schema.Types.ObjectId, ref: 'UserWallet', required: false },
   },
   { timestamps: true, versionKey: false },
 );
